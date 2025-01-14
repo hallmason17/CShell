@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define PATH_MAX 4096
 #define NAME_MAX 255
@@ -42,30 +44,39 @@ bool get_cmd_from_path(char *loc, char **path_dirs, size_t num_dirs,
     return false;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: csh [COMMAND]\n");
-        return EXIT_FAILURE;
+char *read_from_stdin() {
+    char *line;
+    size_t linelen;
+    if (getline(&line, &linelen, stdin) == -1) {
+        perror("csh");
+        exit(1);
     }
-    char *pathenv = getenv("PATH");
+    return line;
+}
 
-    char *path_dirs[MAX_PATH_ENTRIES] = {0};
-    char *saveptr;
-    char *delim = ":";
-    char *tok = strtok_r(pathenv, delim, &saveptr);
+char **split_line(char *str, char *delim) {
+    char **split = malloc(1024 * sizeof(char));
+    char *tok = strtok(str, delim);
     int i = 0;
     while (tok) {
-        path_dirs[i] = tok;
+        split[i] = tok;
         ++i;
-        tok = strtok_r(NULL, delim, &saveptr);
+        tok = strtok(NULL, delim);
     }
-    char *cmd = argv[1];
-    char cmdloc[MAX_FILE_NAME_SIZE];
-    int found = get_cmd_from_path(cmdloc, path_dirs, i, cmd);
-    if (found) {
-        printf("%s\n", cmdloc);
-    } else {
-        fprintf(stderr, "csh: Command not found: %s\n", cmd);
+    return split;
+}
+
+int main(int argc, char *argv[]) {
+    char *line;
+    char **input;
+    while (1) {
+        printf("$ ");
+        line = read_from_stdin();
+        input = split_line(line, " \n");
+        fflush(stdout);
+        free(line);
+        free(input);
     }
-    return EXIT_SUCCESS;
+
+    return 0;
 }
