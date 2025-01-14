@@ -4,11 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define PATH_MAX 4096
 #define NAME_MAX 255
 #define MAX_PATH_ENTRIES 250 * PATH_MAX
 #define MAX_FILE_NAME_SIZE PATH_MAX + NAME_MAX
+
+static char *builtins[3] = {"type", "echo", "cd"};
 
 /**
  * Returns true if command is in given path. Writes dir and filename into loc
@@ -42,10 +46,51 @@ bool get_cmd_from_path(char *loc, char **path_dirs, size_t num_dirs,
     return false;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: csh [COMMAND]\n");
-        return EXIT_FAILURE;
+char *read_from_stdin() {
+    char *line;
+    size_t linelen;
+    if (getline(&line, &linelen, stdin) == -1) {
+        perror("csh");
+        exit(1);
+    }
+    return line;
+}
+
+char **split_line(char *str, char *delim) {
+    char **split = malloc(1024 * sizeof(char));
+    char *tok = strtok(str, delim);
+    int i = 0;
+    while (tok) {
+        split[i] = tok;
+        ++i;
+        tok = strtok(NULL, delim);
+    }
+    return split;
+}
+
+void exec_program_with_args(char **input) {
+    pid_t pid;
+    int pstatus;
+    pid = fork();
+    if (pid == -1) {
+        perror("csh");
+    } else if (pid == 0) {
+        if (execvp(input[0], input) == -1) {
+            perror("csh");
+        }
+    } else {
+        do {
+            waitpid(pid, &pstatus, WUNTRACED);
+        } while (!WIFEXITED(pstatus) && !WIFSIGNALED(pstatus));
+    }
+}
+
+void type(char *cmd) {
+    for (int i = 0; i < 3; i++) {
+        if (strcmp(builtins[i], cmd) == 0) {
+            printf("%s: is a shell builtin\n", cmd);
+            return;
+        }
     }
     char *pathenv = getenv("PATH");
 
@@ -59,13 +104,31 @@ int main(int argc, char *argv[]) {
         ++i;
         tok = strtok_r(NULL, delim, &saveptr);
     }
-    char *cmd = argv[1];
     char cmdloc[MAX_FILE_NAME_SIZE];
     int found = get_cmd_from_path(cmdloc, path_dirs, i, cmd);
     if (found) {
-        printf("%s\n", cmdloc);
+        printf("%s is %s\n", cmd, cmdloc);
     } else {
         fprintf(stderr, "csh: Command not found: %s\n", cmd);
     }
-    return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[]) {
+    char *line;
+    char **input;
+    while (1) {
+        printf("$ ");
+        line = read_from_stdin();
+        input = split_line(line, " \n");
+        if (strcmp("type", input[0]) == 0) {
+            type(input[1]);
+            continue;
+        }
+        exec_program_with_args(input);
+        fflush(stdout);
+        free(line);
+        free(input);
+    }
+
+    return 0;
 }
