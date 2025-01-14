@@ -12,8 +12,6 @@
 #define MAX_PATH_ENTRIES 250 * PATH_MAX
 #define MAX_FILE_NAME_SIZE PATH_MAX + NAME_MAX
 
-static char *builtins[3] = {"type", "echo", "cd"};
-
 /**
  * Returns true if command is in given path. Writes dir and filename into loc
  * param.
@@ -68,51 +66,6 @@ char **split_line(char *str, char *delim) {
     return split;
 }
 
-void exec_program_with_args(char **input) {
-    pid_t pid;
-    int pstatus;
-    pid = fork();
-    if (pid == -1) {
-        perror("csh");
-    } else if (pid == 0) {
-        if (execvp(input[0], input) == -1) {
-            perror("csh");
-        }
-    } else {
-        do {
-            waitpid(pid, &pstatus, WUNTRACED);
-        } while (!WIFEXITED(pstatus) && !WIFSIGNALED(pstatus));
-    }
-}
-
-void type(char *cmd) {
-    for (int i = 0; i < 3; i++) {
-        if (strcmp(builtins[i], cmd) == 0) {
-            printf("%s: is a shell builtin\n", cmd);
-            return;
-        }
-    }
-    char *pathenv = getenv("PATH");
-
-    char *path_dirs[MAX_PATH_ENTRIES] = {0};
-    char *saveptr;
-    char *delim = ":";
-    char *tok = strtok_r(pathenv, delim, &saveptr);
-    int i = 0;
-    while (tok) {
-        path_dirs[i] = tok;
-        ++i;
-        tok = strtok_r(NULL, delim, &saveptr);
-    }
-    char cmdloc[MAX_FILE_NAME_SIZE];
-    int found = get_cmd_from_path(cmdloc, path_dirs, i, cmd);
-    if (found) {
-        printf("%s is %s\n", cmd, cmdloc);
-    } else {
-        fprintf(stderr, "csh: Command not found: %s\n", cmd);
-    }
-}
-
 int main(int argc, char *argv[]) {
     char *line;
     char **input;
@@ -120,11 +73,6 @@ int main(int argc, char *argv[]) {
         printf("$ ");
         line = read_from_stdin();
         input = split_line(line, " \n");
-        if (strcmp("type", input[0]) == 0) {
-            type(input[1]);
-            continue;
-        }
-        exec_program_with_args(input);
         fflush(stdout);
         free(line);
         free(input);
