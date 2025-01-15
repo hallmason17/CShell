@@ -16,7 +16,7 @@ A basic shell written in C.
 Install git, make, and gcc.
 
 ```bash
-git clone https://github.com/hallmason17/shell-c.git
+git clone https://github.com/hallmason17/CShell.git
 cd shell-c
 make
 ./a.out
