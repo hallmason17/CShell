@@ -1,4 +1,4 @@
-# Shell-C
+# CShell
 
 A basic shell in C.
 Will slowly be adding more builtins and functionality.
