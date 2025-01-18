@@ -58,6 +58,7 @@ void exec_program_with_args(command *cmd) {
         if (execvp(cmd->cmd, cmd->args) == -1) {
             perror("csh");
         }
+        exit(EXIT_FAILURE);
     } else {
         do {
             waitpid(pid, &pstatus, WUNTRACED);
