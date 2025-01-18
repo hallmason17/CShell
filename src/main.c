@@ -7,6 +7,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define TOK_DELIM " \r\n"
+#define BUF_SIZE 1024
 #define PATH_MAX 4096
 #define NAME_MAX 255
 #define MAX_PATH_ENTRIES 250 * PATH_MAX
@@ -14,68 +16,46 @@
 
 static char *builtins[3] = {"type", "echo", "cd"};
 
-/**
- * Returns true if command is in given path. Writes dir and filename into loc
- * param.
- * @param loc buffer to write dir/filename into
- * @param path_dirs path array
- * @param num_dirs entries in path
- * @param command command to search
- * @return true if found in path, false otherwise. writes path into loc.
- */
-bool get_cmd_from_path(char *loc, char **path_dirs, size_t num_dirs,
-                       char *command) {
-    char cmdexe[50];
-    struct dirent *pdirent;
-    snprintf(cmdexe, strlen(command) + 5, "%s.%s", command, "exe");
-    for (int j = 0; j < num_dirs; ++j) {
-        DIR *pdir = opendir(path_dirs[j]);
-        if (pdir) {
-            while ((pdirent = readdir(pdir))) {
-                if (strcmp(command, pdirent->d_name) == 0 ||
-                    strcmp(cmdexe, pdirent->d_name) == 0) {
-                    snprintf(loc,
-                             strlen(path_dirs[j]) + strlen(pdirent->d_name) + 2,
-                             "%s/%s", path_dirs[j], pdirent->d_name);
-                    return true;
-                }
-            }
-            closedir(pdir);
-        }
+typedef struct {
+    char *cmd;
+    int num_args;
+    char *args[];
+} command;
+
+command *parse_line(char *line) {
+    command *cmd = malloc(sizeof(command) + BUF_SIZE * sizeof(char *));
+    char *tok = NULL;
+    cmd->num_args = 0;
+    tok = strtok(line, TOK_DELIM);
+    while (tok) {
+        cmd->args[cmd->num_args] = tok;
+        cmd->num_args++;
+        tok = strtok(NULL, TOK_DELIM);
     }
-    return false;
+    cmd->args[cmd->num_args] = NULL;
+    cmd->cmd = cmd->args[0];
+
+    return cmd;
 }
 
 char *read_from_stdin() {
-    char *line;
-    size_t linelen;
+    char *line = NULL;
+    size_t linelen = 0;
     if (getline(&line, &linelen, stdin) == -1) {
         perror("csh");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
     return line;
 }
 
-char **split_line(char *str, char *delim) {
-    char **split = malloc(1024 * sizeof(char));
-    char *tok = strtok(str, delim);
-    int i = 0;
-    while (tok) {
-        split[i] = tok;
-        ++i;
-        tok = strtok(NULL, delim);
-    }
-    return split;
-}
-
-void exec_program_with_args(char **input) {
+void exec_program_with_args(command *cmd) {
     pid_t pid;
-    int pstatus;
+    int pstatus = 0;
     pid = fork();
     if (pid == -1) {
         perror("csh");
     } else if (pid == 0) {
-        if (execvp(input[0], input) == -1) {
+        if (execvp(cmd->cmd, cmd->args) == -1) {
             perror("csh");
         }
     } else {
@@ -85,50 +65,39 @@ void exec_program_with_args(char **input) {
     }
 }
 
-void type(char *cmd) {
-    for (int i = 0; i < 3; i++) {
-        if (strcmp(builtins[i], cmd) == 0) {
-            printf("%s: is a shell builtin\n", cmd);
-            return;
-        }
-    }
-    char *pathenv = getenv("PATH");
-
-    char *path_dirs[MAX_PATH_ENTRIES] = {0};
-    char *saveptr;
-    char *delim = ":";
-    char *tok = strtok_r(pathenv, delim, &saveptr);
-    int i = 0;
-    while (tok) {
-        path_dirs[i] = tok;
-        ++i;
-        tok = strtok_r(NULL, delim, &saveptr);
-    }
-    char cmdloc[MAX_FILE_NAME_SIZE];
-    int found = get_cmd_from_path(cmdloc, path_dirs, i, cmd);
-    if (found) {
-        printf("%s is %s\n", cmd, cmdloc);
-    } else {
-        fprintf(stderr, "csh: Command not found: %s\n", cmd);
-    }
-}
-
 int main(int argc, char *argv[]) {
-    char *line;
-    char **input;
+    char *line = NULL;
     while (1) {
-        printf("$ ");
+        char cwd[PATH_MAX] = {0};
+        getcwd(cwd, sizeof(cwd));
+
+        printf("%s ", cwd);
+
         line = read_from_stdin();
-        input = split_line(line, " \n");
-        if (strcmp("type", input[0]) == 0) {
-            type(input[1]);
-            continue;
+        command *input = parse_line(line);
+
+        if (strcmp("exit", input->cmd) == 0) {
+            exit(EXIT_SUCCESS);
+        } else if (strcmp("cd", input->cmd) == 0) {
+            if (input->num_args == 0) {
+                char *home = getenv("HOME");
+                if (chdir(home) != 1) {
+                    fprintf(stderr, "Unable to cd to %s", home);
+                }
+            } else if (input->num_args == 2) {
+                if (chdir(input->args[1]) != 0) {
+                    perror("csh");
+                }
+            } else {
+                fprintf(stderr, "csh: cd only takes one argument\n");
+            }
+        } else {
+            exec_program_with_args(input);
         }
-        exec_program_with_args(input);
         fflush(stdout);
         free(line);
         free(input);
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
